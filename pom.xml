@@ -9,7 +9,7 @@
 
     <name>TKBC Database</name>
     <description>Cấu trúc dùng chung cho nghiệp vụ thống kê báo cáo truy vấn trực tiếp từ database</description>
-    <url>https://github.com/vatisteve/tkbc-db</url>
+    <url>https://github.com/vatidaniel/tkbc-db</url>
 
     <licenses>
         <license>
@@ -23,14 +23,14 @@
             <name>vatisteve</name>
             <email>vatisteve@gmail.com</email>
             <organization>TKBC-DB</organization>
-            <organizationUrl>https://github.com/vatisteve</organizationUrl>
+            <organizationUrl>https://github.com/vatidaniel</organizationUrl>
         </developer>
     </developers>
 
     <scm>
-        <connection>scm:git:git@github.com:vatisteve/tkbc-db.git</connection>
-        <developerConnection>scm:git:ssh://git@github.com:vatisteve/tkbc-db.git</developerConnection>
-        <url>https://github.com/vatisteve/tkbc-db/tree/main</url>
+        <connection>scm:git:git@github.com:vatidaniel/tkbc-db.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com:vatidaniel/tkbc-db.git</developerConnection>
+        <url>https://github.com/vatidaniel/tkbc-db/tree/main</url>
     </scm>
 
     <distributionManagement>
