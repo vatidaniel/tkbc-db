@@ -7,19 +7,30 @@ import io.github.vatisteve.tkbc.db.model.StatisticParameter;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.Validate;
+import org.hibernate.Session;
 
 import javax.persistence.EntityManager;
-import javax.persistence.ParameterMode;
-import javax.persistence.StoredProcedureQuery;
 import java.io.Serializable;
+import java.sql.CallableStatement;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * StatisticExecutor implementation that reads statistics from a database Stored Procedure.
- * It registers IN parameters, executes the procedure and maps each result set row into
- * the registered {@link io.github.vatisteve.tkbc.db.generic.Statistic} instances.
- * Groups of statistics are split by type and whether a custom result mapper is used.
+ * <p>
+ * Parameters are bound positionally (in the order of the supplied list) and each result set is
+ * read through the raw JDBC {@link ResultSet} via {@code getObject}, leaving value conversion to
+ * the registered {@link io.github.vatisteve.tkbc.db.generic.Statistic} implementations. This
+ * deliberately bypasses Hibernate's typed result-set extraction, which - for an untyped procedure
+ * call returning multiple result sets - reuses the first result set's type descriptor for the
+ * later ones and can throw {@code ArithmeticException: Rounding necessary} when a DECIMAL result
+ * set is coerced into a BIGINT/BigInteger (see issue #2).
+ * <p>
+ * Groups of statistics are split by {@link Statistic#joinPreviousGroup()}; each group consumes one
+ * result set in sequence.
  * @author tinhnv - Jan 19 2025
  */
 @Slf4j
@@ -35,53 +46,81 @@ public class StoredProcedureStatisticExecutor implements StatisticExecutor {
         this.entityManager = entityManager;
     }
 
-    private <P extends StatisticParameter> StoredProcedureQuery createStoredProcedureQuery(List<P> parameters) {
-        StoredProcedureQuery sp = entityManager.createStoredProcedureQuery(procedureName);
-        parameters.forEach(param -> {
-            log.trace("Set Stored Procedure parameter [{}], with value [{}]", param.getName(), param.getValue());
-            sp.registerStoredProcedureParameter(param.getName(), param.getType(), ParameterMode.IN);
-            sp.setParameter(param.getName(), param.getValue());
-        });
-        return sp;
-    }
-
     @Override
     public <I extends Serializable, R extends StatisticDto<I>, P extends StatisticParameter> void execute(R cursor, List<P> parameters) {
         Validate.notNull(parameters, "parameters must not be null");
         Validate.notNull(cursor, "cursor must not be null");
         Validate.notNull(cursor.getStatistics(), "cursor statistics must not be null");
         List<StatisticGroup> groups = splitStatisticsType(cursor.getStatistics());
-        StoredProcedureQuery sp = createStoredProcedureQuery(parameters);
-        if (sp.execute()) getResult(groups, sp);
-        else log.error("Execute store procedure [{}] failed", procedureName);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static void getResult(List<StatisticGroup> groups, StoredProcedureQuery sp) {
-        for (StatisticGroup group : groups) {
-            List<Statistic<?>> registeredStatistics = group.getStatistics();
-            if (group.useMapper) {
-                List<Object[]> queriedStatistics = sp.getResultList();
-                checkStatisticSizeAndLogWarning(group, queriedStatistics, registeredStatistics);
-                for (int i = 0; i < registeredStatistics.size(); i++) {
-                    Statistic<?> stat = registeredStatistics.get(i);
-                    Object[] values = queriedStatistics.get(i);
-                    log.trace("Registered statistics index [{}] set value with [{}] fields", i, values.length);
-                    stat.useResultMapper().accept(values);
+        Session session = entityManager.unwrap(Session.class);
+        session.doWork(connection -> {
+            try (CallableStatement cs = connection.prepareCall(buildCallString(parameters.size()))) {
+                for (int i = 0; i < parameters.size(); i++) {
+                    StatisticParameter param = parameters.get(i);
+                    log.trace("Set Stored Procedure parameter [{}] at index [{}] with value [{}]", param.getName(), i + 1, param.getValue());
+                    cs.setObject(i + 1, param.getValue());
                 }
-            } else {
-                List<?> queriedStatistics = sp.getResultList();
-                checkStatisticSizeAndLogWarning(group, queriedStatistics, registeredStatistics);
-                for (int i = 0; i < registeredStatistics.size(); i++) {
-                    Statistic<?> stat = registeredStatistics.get(i);
-                    Object value = queriedStatistics.get(i);
-                    log.trace("Registered statistics index [{}] set value [{}] with type [{}]", i, value, stat.getType());
-                    stat.setValue(value);
+                if (cs.execute()) {
+                    consumeResults(groups, cs);
+                } else {
+                    log.error("Execute stored procedure [{}] returned no result set", procedureName);
                 }
             }
-            if (!sp.hasMoreResults() && groups.size() > 1) {
-                log.error("There is only one result set! Remaining {} statistics group(s) will be omitted", groups.size() - 1);
+        });
+    }
+
+    private String buildCallString(int parameterCount) {
+        StringBuilder sb = new StringBuilder("{call ").append(procedureName).append('(');
+        for (int i = 0; i < parameterCount; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append('?');
+        }
+        return sb.append(")}").toString();
+    }
+
+    private void consumeResults(List<StatisticGroup> groups, CallableStatement cs) throws SQLException {
+        boolean hasResult = true;
+        for (int g = 0; g < groups.size(); g++) {
+            if (!hasResult) {
+                log.error("Stored procedure [{}] returned fewer result sets than statistic groups; {} remaining group(s) omitted",
+                        procedureName, groups.size() - g);
                 break;
+            }
+            try (ResultSet rs = cs.getResultSet()) {
+                assignGroup(groups.get(g), readRows(rs));
+            }
+            hasResult = cs.getMoreResults();
+        }
+    }
+
+    private static List<Object[]> readRows(ResultSet rs) throws SQLException {
+        ResultSetMetaData metaData = rs.getMetaData();
+        int columnCount = metaData.getColumnCount();
+        List<Object[]> rows = new ArrayList<>();
+        while (rs.next()) {
+            Object[] row = new Object[columnCount];
+            for (int c = 0; c < columnCount; c++) {
+                row[c] = rs.getObject(c + 1);
+            }
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private static void assignGroup(StatisticGroup group, List<Object[]> rows) {
+        List<Statistic<?>> registeredStatistics = group.getStatistics();
+        checkStatisticSizeAndLogWarning(group, rows, registeredStatistics);
+        int count = Math.min(rows.size(), registeredStatistics.size());
+        for (int i = 0; i < count; i++) {
+            Statistic<?> stat = registeredStatistics.get(i);
+            Object[] row = rows.get(i);
+            if (group.useMapper) {
+                log.trace("Registered statistics index [{}] mapped with [{}] field(s)", i, row.length);
+                stat.useResultMapper().accept(row);
+            } else {
+                Object value = row.length > 0 ? row[0] : null;
+                log.trace("Registered statistics index [{}] set value [{}] with type [{}]", i, value, stat.getType());
+                stat.setValue(value);
             }
         }
     }

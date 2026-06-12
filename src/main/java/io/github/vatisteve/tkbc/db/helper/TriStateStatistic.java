@@ -24,7 +24,9 @@ public class TriStateStatistic implements Statistic<Boolean> {
     @Override
     public void sumNext(Statistic<Boolean> other) {
         Boolean otherValue = other.getValue();
-        if (otherValue != null) value = value || otherValue;
+        // Stay null until the first non-null accumulation; treat a null current value as false
+        // (a plain `value || otherValue` would unbox the null initial value and throw NPE).
+        if (otherValue != null) value = (value != null && value) || otherValue;
     }
 
     @Override
