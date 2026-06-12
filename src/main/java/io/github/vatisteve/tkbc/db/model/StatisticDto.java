@@ -4,6 +4,7 @@ import io.github.vatisteve.tkbc.db.generic.ModelInfo;
 import io.github.vatisteve.tkbc.db.generic.Statistic;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -15,6 +16,7 @@ import java.util.function.Supplier;
  * @since Jan 11, 2024
  */
 @Data
+@Slf4j
 @EqualsAndHashCode(callSuper = false, of = {"model","statistics"})
 public class StatisticDto<I extends Serializable> {
 
@@ -51,7 +53,12 @@ public class StatisticDto<I extends Serializable> {
         if (parents.isEmpty()) {
             children.forEach(c -> parents.add((T) c.newInstance()));
         }
-        for (int i = 0; i < parents.size(); i++) {
+        if (parents.size() != children.size()) {
+            log.warn("Mismatched statistics size while summing: parents [{}] vs children [{}] - extra cells are ignored",
+                    parents.size(), children.size());
+        }
+        int count = Math.min(parents.size(), children.size());
+        for (int i = 0; i < count; i++) {
             parents.get(i).sumNext((Statistic) children.get(i));
         }
     }

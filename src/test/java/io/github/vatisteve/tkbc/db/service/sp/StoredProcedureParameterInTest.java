@@ -1,44 +1,50 @@
 package io.github.vatisteve.tkbc.db.service.sp;
 
-import io.github.vatisteve.tkbc.db.model.StatisticParameter;
-import junit.framework.TestCase;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Tests for StoredProcedureParameterIn
  */
-public class StoredProcedureParameterInTest extends TestCase {
+class StoredProcedureParameterInTest {
 
-    public void testNullNameThrowsException() {
-        try {
-            new StoredProcedureParameterIn<>(null, 1);
-            fail("Expected exception for null name");
-        } catch (RuntimeException expected) {
-            // Apache Validate may throw NPE for null argument, accept any runtime exception
-        }
+    @Test
+    void testNullNameThrowsException() {
+        // Apache Validate may throw NPE or IllegalArgumentException; accept any runtime exception
+        assertThrows(RuntimeException.class, () -> new StoredProcedureParameterIn<>(null, 1));
     }
 
-    public void testBlankNameThrowsIllegalArgumentException() {
-        try {
-            new StoredProcedureParameterIn<>("  ", 1);
-            fail("Expected IllegalArgumentException for blank name");
-        } catch (IllegalArgumentException expected) {
-            // ok
-        }
+    @Test
+    void testBlankNameThrowsIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> new StoredProcedureParameterIn<>("  ", 1));
     }
 
-    public void testNullValueThrowsException() {
-        try {
-            new StoredProcedureParameterIn<Object>("p", null);
-            fail("Expected exception for null value");
-        } catch (RuntimeException expected) {
-            // Apache Validate may throw NPE for null argument, accept any runtime exception
-        }
+    @Test
+    void testNullValueThrowsException() {
+        assertThrows(RuntimeException.class, () -> new StoredProcedureParameterIn<Object>("p", null));
     }
 
-    public void testGettersAndTypeReturnCorrectClass() {
+    @Test
+    void testGettersAndTypeReturnCorrectClass() {
         StoredProcedureParameterIn<Integer> p = new StoredProcedureParameterIn<>("age", 25);
         assertEquals("age", p.getName());
         assertEquals(Integer.valueOf(25), p.getValue());
         assertEquals(Integer.class, p.getType());
+    }
+
+    @Test
+    void testExplicitTypeConstructorAllowsNullValue() {
+        StoredProcedureParameterIn<String> p = new StoredProcedureParameterIn<>("note", null, String.class);
+        assertEquals("note", p.getName());
+        assertNull(p.getValue());
+        assertEquals(String.class, p.getType());
+    }
+
+    @Test
+    void testExplicitTypeConstructorRejectsNullType() {
+        assertThrows(RuntimeException.class, () -> new StoredProcedureParameterIn<>("note", "x", null));
     }
 }

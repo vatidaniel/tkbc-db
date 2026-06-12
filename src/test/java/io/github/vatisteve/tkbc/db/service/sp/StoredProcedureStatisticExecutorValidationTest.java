@@ -3,8 +3,8 @@ package io.github.vatisteve.tkbc.db.service.sp;
 import io.github.vatisteve.tkbc.db.generic.ModelInfo;
 import io.github.vatisteve.tkbc.db.generic.Statistic;
 import io.github.vatisteve.tkbc.db.model.StatisticDto;
-import junit.framework.TestCase;
 import lombok.Getter;
+import org.junit.jupiter.api.Test;
 
 import javax.persistence.EntityManager;
 import java.io.Serializable;
@@ -12,10 +12,12 @@ import java.lang.reflect.Proxy;
 import java.util.Collections;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 /**
  * Validation-focused tests for StoredProcedureStatisticExecutor
  */
-public class StoredProcedureStatisticExecutorValidationTest extends TestCase {
+class StoredProcedureStatisticExecutorValidationTest {
 
     private EntityManager dummyEntityManager() {
         return (EntityManager) Proxy.newProxyInstance(
@@ -25,54 +27,37 @@ public class StoredProcedureStatisticExecutorValidationTest extends TestCase {
         );
     }
 
-    public void testConstructorRejectsEmptyProcedureName() {
-        try {
-            new StoredProcedureStatisticExecutor("", dummyEntityManager());
-            fail("Expected IllegalArgumentException for empty procedure name");
-        } catch (IllegalArgumentException expected) {
-            // ok
-        }
+    @Test
+    void testConstructorRejectsEmptyProcedureName() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new StoredProcedureStatisticExecutor("", dummyEntityManager()));
     }
 
-    public void testConstructorRejectsNullEntityManager() {
-        try {
-            new StoredProcedureStatisticExecutor("proc", null);
-            fail("Expected exception for null EntityManager");
-        } catch (RuntimeException expected) {
-            // Apache Validate may throw NPE for null argument, accept any runtime exception
-        }
+    @Test
+    void testConstructorRejectsNullEntityManager() {
+        // Apache Validate may throw NPE for null argument; accept any runtime exception
+        assertThrows(RuntimeException.class,
+                () -> new StoredProcedureStatisticExecutor("proc", null));
     }
 
-    public void testExecuteRejectsNullParameters() {
+    @Test
+    void testExecuteRejectsNullParameters() {
         StoredProcedureStatisticExecutor exec = new StoredProcedureStatisticExecutor("proc", dummyEntityManager());
         StatisticDto<Long> dto = new StatisticDto<>(new SimpleModelInfo<>(1L, "C1", "Name1"));
-        try {
-            exec.execute(dto, null);
-            fail("Expected exception for null parameters");
-        } catch (RuntimeException expected) {
-            // Apache Validate may throw NPE for null argument, accept any runtime exception
-        }
+        assertThrows(RuntimeException.class, () -> exec.execute(dto, null));
     }
 
-    public void testExecuteRejectsNullCursor() {
+    @Test
+    void testExecuteRejectsNullCursor() {
         StoredProcedureStatisticExecutor exec = new StoredProcedureStatisticExecutor("proc", dummyEntityManager());
-        try {
-            exec.execute(null, Collections.emptyList());
-            fail("Expected exception for null cursor");
-        } catch (RuntimeException expected) {
-            // Apache Validate may throw NPE for null argument, accept any runtime exception
-        }
+        assertThrows(RuntimeException.class, () -> exec.execute(null, Collections.emptyList()));
     }
 
-    public void testExecuteRejectsNullStatisticsFromCursor() {
+    @Test
+    void testExecuteRejectsNullStatisticsFromCursor() {
         StoredProcedureStatisticExecutor exec = new StoredProcedureStatisticExecutor("proc", dummyEntityManager());
         NullStatisticDto<Long> dto = new NullStatisticDto<>(new SimpleModelInfo<>(2L, "C2", "Name2"));
-        try {
-            exec.execute(dto, Collections.emptyList());
-            fail("Expected exception for null statistics");
-        } catch (RuntimeException expected) {
-            // Apache Validate may throw NPE for null argument, accept any runtime exception
-        }
+        assertThrows(RuntimeException.class, () -> exec.execute(dto, Collections.emptyList()));
     }
 
     // --- Helpers ---
